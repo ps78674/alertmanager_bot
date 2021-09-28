@@ -1,5 +1,6 @@
 ## Telegram Bot for Alertmanager / Prometheus
 Can send alerts via alermanager webhook and/or show as inline menu (by sending /targets command).
+<img src="https://raw.githubusercontent.com/ps78674/alertmanager_bot/master/img/menu.png" width="50"/>
 ![](/img/menu.png)
 
 ### Alertmanager configuration

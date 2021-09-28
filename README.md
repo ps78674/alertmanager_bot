@@ -26,4 +26,4 @@ Default template consists from two sections.
     ...
 {{ end -}}
 ```
-Slice - GettableAlerts (from menu), struct - alert from webhook.
+Slice - GettableAlerts (from menu), struct - alerts from webhook.

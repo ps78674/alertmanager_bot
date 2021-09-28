@@ -1,0 +1,53 @@
+{{ $kind := KindOf . }}
+{{ if eq $kind "slice" }}
+{{- range . -}}
+---
+{{- $severity := index .Labels "severity" -}}
+{{ if eq $severity "info" }}
+ℹ <b>{{ index .Labels "job" | ToUpper }}</b> ℹ
+{{ else if eq $severity "warning" }}
+⚠️ <b>{{ index .Labels "job" | ToUpper }}</b> ⚠️
+{{ else if eq $severity "critical" }}
+🚨 <b>{{ index .Labels "job" | ToUpper }}</b> 🚨
+{{ else }}
+<b>{{ index .Labels "job" | ToUpper }}</b>
+{{ end -}}
+{{ index .Annotations "summary" }}
+{{ index .Annotations "description" }}
+Active from: <b>{{ .StartsAt | FormatDate }}</b>
+{{ if index .Annotations "value" -}}
+Current value: <b>{{ index .Annotations "value" }}</b>
+{{ end -}}
+{{ end -}}
+{{ else if eq $kind "struct" }}
+{{ if eq .Status "firing" -}}
+🔥 <b>{{ .Status | ToUpper }}</b> 🔥
+{{ end -}}
+{{ if eq .Status "resolved" -}}
+✅ <b>{{ .Status | ToUpper }}</b> ✅
+{{ end -}}
+{{- range .Alerts -}}
+{{ if eq $.Status .Status -}}
+---
+{{- $severity := index .Labels "severity" -}}
+{{ if eq $severity "info" }}
+ℹ <b>{{ index .Labels "job" | ToUpper }}</b> ℹ
+{{ else if eq $severity "warning" }}
+⚠️ <b>{{ index .Labels "job" | ToUpper }}</b> ⚠️
+{{ else if eq $severity "critical" }}
+🚨 <b>{{ index .Labels "job" | ToUpper }}</b> 🚨
+{{ else }}
+<b>{{ index .Labels "job" | ToUpper }}</b>
+{{ end -}}
+{{ index .Annotations "summary" }}
+{{ index .Annotations "description" }}
+Active from: <b>{{ .StartsAt | FormatDate }}</b>
+{{ if eq .Status "resolved" -}}
+Active till: <b>{{ .EndsAt | FormatDate }}</b>
+{{ end -}}
+{{ if index .Annotations "value" -}}
+Current value: <b>{{ index .Annotations "value" }}</b>
+{{ end -}}
+{{ end -}}
+{{ end -}}
+{{ end -}}

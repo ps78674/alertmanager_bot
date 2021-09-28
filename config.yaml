@@ -1,0 +1,17 @@
+# telegram_token: VALID_BOT_TOKEN
+# alertmanager_url: http://localhost:9093
+# prometheus_url: http://localhost:9090
+# api_timeout: 10s
+# keyboard_rows: 2
+template_path: default.tmpl
+# bind_address: 0.0.0.0
+# bind_port: 9000
+# disable_http: yes
+# logfile_path: /dev/stdout
+users:
+  - user1
+  - user2
+# time_format: 02/01/2006 15:04:05
+# time_zone: Europe/Moscow
+button_prefix_ok: "✅ "
+button_prefix_fail: "🔥 "

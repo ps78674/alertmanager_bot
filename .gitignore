@@ -1,0 +1,4 @@
+alertmanager_bot
+alertmanager_bot*.tar.gz
+build/
+__debug_bin

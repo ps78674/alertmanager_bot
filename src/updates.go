@@ -54,7 +54,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 	// accept messages only from configured users
 	var updateUserIsAdmin bool
 	for _, u := range cfg.Users {
-		if u == m.Chat.UserName {
+		if u == m.From.String() {
 			updateUserIsAdmin = true
 			break
 		}

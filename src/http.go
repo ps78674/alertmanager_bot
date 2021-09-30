@@ -33,8 +33,7 @@ func handleHTTP(ctx *fasthttp.RequestCtx, bot *TelegramBot) {
 		// send message as json
 		if len(cfg.TemplatePath) == 0 {
 			msg := tgbotapi.NewMessage(chatID, string(ctx.PostBody()))
-			_, e := bot.BotAPI.Send(msg)
-			if e != nil {
+			if e := sendMessage(bot, msg); e != nil {
 				log.Printf("error sending message: %s", e)
 			}
 
@@ -57,8 +56,7 @@ func handleHTTP(ctx *fasthttp.RequestCtx, bot *TelegramBot) {
 
 		msg := tgbotapi.NewMessage(chatID, s)
 		msg.ParseMode = tgbotapi.ModeHTML
-		_, e := bot.BotAPI.Send(msg)
-		if e != nil {
+		if e := sendMessage(bot, msg); e != nil {
 			log.Printf("error sending message: %s", e)
 		}
 	default:

@@ -10,6 +10,7 @@ require (
 	github.com/ps78674/docopt.go v0.0.0-20210902115100-9f20d33e8d65
 	github.com/valyala/fasthttp v1.30.0
 	gopkg.in/telegram-bot-api.v4 v4.6.4
+	gopkg.in/tucnak/telebot.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 

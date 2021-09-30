@@ -25,22 +25,23 @@ import (
 )
 
 var cfg struct {
-	ConfigFile       string        `envconfig:"CONFIG_PATH" docopt:"--config"`
-	TelegramToken    string        `envconfig:"TELEGRAM_TOKEN" yaml:"telegram_token"`
-	AlermanagerURL   string        `envconfig:"ALERTMANAGER_URL" yaml:"alertmanager_url" default:"http://localhost:9093"`
-	PrometheusURL    string        `envconfig:"PROMETHEUS_URL" yaml:"prometheus_url" default:"http://localhost:9090"`
-	APITimeout       time.Duration `envconfig:"API_TIMEOUT" yaml:"api_timeout" default:"10s"`
-	KeyboardRows     int           `envconfig:"KEYBOARD_ROWS" yaml:"keyboard_rows" default:"2"`
-	TemplatePath     string        `envconfig:"TEMPLATE_PATH" yaml:"template_path"`
-	BindAddress      string        `envconfig:"BIND_ADDRESS" yaml:"bind_address" default:"0.0.0.0"`
-	BindPort         int           `envconfig:"BIND_PORT" yaml:"bind_port" default:"8088"`
-	DisableHTTP      bool          `envconfig:"DISABLE_HTTP" yaml:"disable_http" default:"false"`
-	LogFile          string        `envconfig:"LOGFILE_PATH" yaml:"logfile_path"`
-	Users            []string      `envconfig:"USERS" yaml:"users"`
-	TimeFormat       string        `envconfig:"TIMEFORMAT" yaml:"time_format" default:"02/01/2006 15:04:05"`
-	TimeZone         string        `envconfig:"TIMEZONE" yaml:"time_zone" default:"Europe/Moscow"`
-	ButtonPrefixOK   string        `envconfig:"BUTTON_PREFIX_OK" yaml:"button_prefix_ok"`
-	ButtonPrefixFail string        `envconfig:"BUTTON_PREFIX_FAIL" yaml:"button_prefix_fail"`
+	ConfigFile            string        `envconfig:"CONFIG_PATH" docopt:"--config"`
+	TelegramToken         string        `envconfig:"TELEGRAM_TOKEN" yaml:"telegram_token"`
+	AlermanagerURL        string        `envconfig:"ALERTMANAGER_URL" yaml:"alertmanager_url" default:"http://localhost:9093"`
+	PrometheusURL         string        `envconfig:"PROMETHEUS_URL" yaml:"prometheus_url" default:"http://localhost:9090"`
+	APITimeout            time.Duration `envconfig:"API_TIMEOUT" yaml:"api_timeout" default:"10s"`
+	KeyboardRows          int           `envconfig:"KEYBOARD_ROWS" yaml:"keyboard_rows" default:"2"`
+	TemplatePath          string        `envconfig:"TEMPLATE_PATH" yaml:"template_path"`
+	BindAddress           string        `envconfig:"BIND_ADDRESS" yaml:"bind_address" default:"0.0.0.0"`
+	BindPort              int           `envconfig:"BIND_PORT" yaml:"bind_port" default:"8088"`
+	DisableHTTP           bool          `envconfig:"DISABLE_HTTP" yaml:"disable_http" default:"false"`
+	LogFile               string        `envconfig:"LOGFILE_PATH" yaml:"logfile_path"`
+	Users                 []string      `envconfig:"USERS" yaml:"users"`
+	TimeFormat            string        `envconfig:"TIMEFORMAT" yaml:"time_format" default:"02/01/2006 15:04:05"`
+	TimeZone              string        `envconfig:"TIMEZONE" yaml:"time_zone" default:"Europe/Moscow"`
+	ButtonPrefixOK        string        `envconfig:"BUTTON_PREFIX_OK" yaml:"button_prefix_ok"`
+	ButtonPrefixFail      string        `envconfig:"BUTTON_PREFIX_FAIL" yaml:"button_prefix_fail"`
+	SendMessageRetryCount int           `envconfig:"SEND_MESSAGE_RETRY_COUNT" yaml:"send_message_retry_count" default:"3"`
 }
 
 var (

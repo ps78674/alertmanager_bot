@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/client/alert"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
+	"gopkg.in/tucnak/telebot.v2"
 )
 
 func KindOf(in interface{}) string {
@@ -170,6 +171,25 @@ func newTargetsKB(bot *TelegramBot, jobName string) (kb tgbotapi.InlineKeyboardM
 
 	if len(r) > 0 {
 		kb.InlineKeyboard = append(kb.InlineKeyboard, r)
+	}
+
+	return
+}
+
+func sendMessage(bot *TelegramBot, msg tgbotapi.Chattable) (err error) {
+	for i := 0; i < cfg.SendMessageRetryCount; i++ {
+		_, err = bot.BotAPI.Send(msg)
+		if err != nil {
+			e, ok := err.(telebot.FloodError)
+			if !ok {
+				break
+			}
+
+			log.Printf("got FloodError, retrying in %d", e.RetryAfter)
+			time.Sleep(time.Second * time.Duration(e.RetryAfter))
+			continue
+		}
+		break
 	}
 
 	return

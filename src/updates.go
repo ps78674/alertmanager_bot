@@ -61,8 +61,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 	}
 	if !updateUserIsAdmin {
 		msg := tgbotapi.NewMessage(m.Chat.ID, "I can't talk to you, sorry.")
-		_, err := bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 		return nil
@@ -71,8 +70,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 	// allow only commands (e.g. /alerts)
 	if !m.IsCommand() {
 		msg := tgbotapi.NewMessage(m.Chat.ID, "Message doesn't look like a command.\n"+helpMsg)
-		_, err := bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 		return nil
@@ -83,8 +81,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 	case "help", "start":
 		strMsg := fmt.Sprintf("Telegram Bot for Alertmanager\nVersion %s\n%s", versionString, helpMsg)
 		msg := tgbotapi.NewMessage(m.Chat.ID, strMsg)
-		_, err := bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "alerts":
@@ -93,15 +90,13 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 		argsArr := strings.Split(args, " ")
 		if len(argsArr) > 1 {
 			msg := tgbotapi.NewMessage(m.Chat.ID, "Too many arguments.")
-			_, err := bot.BotAPI.Send(msg)
-			if err != nil {
+			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
 		}
 		if len(argsArr[0]) != 0 && argsArr[0] != "json" {
 			msg := tgbotapi.NewMessage(m.Chat.ID, "Unknown argument.")
-			_, err := bot.BotAPI.Send(msg)
-			if err != nil {
+			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
 		}
@@ -112,8 +107,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 		})
 		if len(alerts.GetPayload()) == 0 {
 			msg := tgbotapi.NewMessage(m.Chat.ID, "No active alerts found.")
-			_, err := bot.BotAPI.Send(msg)
-			if err != nil {
+			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
 		}
@@ -126,8 +120,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 			}
 
 			msg := tgbotapi.NewMessage(m.Chat.ID, string(bytes))
-			_, err = bot.BotAPI.Send(msg)
-			if err != nil {
+			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
 		}
@@ -140,8 +133,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 
 		msg := tgbotapi.NewMessage(m.Chat.ID, s)
 		msg.ParseMode = tgbotapi.ModeHTML
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "targets":
@@ -153,8 +145,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 		msg := tgbotapi.NewMessage(m.Chat.ID, "Select job:")
 		msg.ReplyMarkup = kb
 
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "status":
@@ -195,14 +186,12 @@ Uptime: %s
 			versionString,
 			time.Since(bot.StartTime).String())
 		msg := tgbotapi.NewMessage(m.Chat.ID, status)
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	default:
 		msg := tgbotapi.NewMessage(m.Chat.ID, "Unknown command.\n"+helpMsg)
-		_, err := bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	}
@@ -254,8 +243,7 @@ func processCallbackQuery(bot *TelegramBot, c *tgbotapi.CallbackQuery) error {
 		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, "Select target:")
 		msg.ReplyMarkup = &kb
 
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "T":
@@ -292,8 +280,7 @@ func processCallbackQuery(bot *TelegramBot, c *tgbotapi.CallbackQuery) error {
 		msg.ParseMode = tgbotapi.ModeHTML
 		msg.ReplyMarkup = &kb
 
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "JJ":
@@ -305,8 +292,7 @@ func processCallbackQuery(bot *TelegramBot, c *tgbotapi.CallbackQuery) error {
 		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, "Select job:")
 		msg.ReplyMarkup = &kb
 
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "TT":
@@ -320,14 +306,12 @@ func processCallbackQuery(bot *TelegramBot, c *tgbotapi.CallbackQuery) error {
 		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, "Select target:")
 		msg.ReplyMarkup = &kb
 
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "C":
 		msg := tgbotapi.NewDeleteMessage(c.Message.Chat.ID, c.Message.MessageID)
-		_, err := bot.BotAPI.Send(msg)
-		if err != nil {
+		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	}

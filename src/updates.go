@@ -270,18 +270,24 @@ func processCallbackQuery(bot *TelegramBot, c *tgbotapi.CallbackQuery) error {
 
 		// get job name for target
 		v1api := v1.NewAPI(bot.Prometheus)
-		tm, err := v1api.TargetsMetadata(ctx, "{instance=\""+callbackData[1]+"\"}", "", "1")
+		targets, err := v1api.Targets(ctx)
 		if err != nil {
-			return fmt.Errorf("error getting metadata for target '%s': %s", callbackData[1], err)
+			return fmt.Errorf("error getting targets data: %s", err)
 		}
 
-		kb := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", "TT,"+tm[0].Target["job"])))
-		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, msgText)
-		msg.ParseMode = tgbotapi.ModeHTML
-		msg.ReplyMarkup = &kb
+		for _, t := range targets.Active {
+			if string(t.Labels["instance"]) == callbackData[1] {
+				kb := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", "TT,"+string(t.Labels["job"]))))
+				msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, msgText)
+				msg.ParseMode = tgbotapi.ModeHTML
+				msg.ReplyMarkup = &kb
 
-		if err := sendMessage(bot, msg); err != nil {
-			return fmt.Errorf("error sending message: %s", err)
+				if err := sendMessage(bot, msg); err != nil {
+					return fmt.Errorf("error sending message: %s", err)
+				}
+
+				break
+			}
 		}
 	case "JJ":
 		kb, err := newJobsKB(bot)

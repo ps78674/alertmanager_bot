@@ -118,7 +118,7 @@ func newTargetsKB(bot *TelegramBot, jobName string) (kb tgbotapi.InlineKeyboardM
 	v1api := v1.NewAPI(bot.Prometheus)
 	targets, err := v1api.Targets(ctx)
 	if err != nil {
-		e = fmt.Errorf("error getting targets fo job '%s': %s", jobName, err)
+		e = fmt.Errorf("error getting targets data: %s", err)
 		return
 	}
 

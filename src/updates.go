@@ -93,12 +93,14 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
+			return nil
 		}
 		if len(argsArr[0]) != 0 && argsArr[0] != "json" {
 			msg := tgbotapi.NewMessage(m.Chat.ID, "Unknown argument.")
 			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
+			return nil
 		}
 
 		// get active alerts
@@ -110,6 +112,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
+			return nil
 		}
 
 		// send message as json
@@ -123,6 +126,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 			if err := sendMessage(bot, msg); err != nil {
 				return fmt.Errorf("error sending message: %s", err)
 			}
+			return nil
 		}
 
 		// send temlated message

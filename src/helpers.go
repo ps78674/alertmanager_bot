@@ -11,14 +11,25 @@ import (
 	"path"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/prometheus/alertmanager/api/v2/client/alert"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/segmentio/ksuid"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 	"gopkg.in/tucnak/telebot.v2"
 )
+
+const maxMessageTextLength = 4096
+
+var tmplFuncMap = template.FuncMap{
+	"ToUpper":    strings.ToUpper,
+	"ToLower":    strings.ToLower,
+	"KindOf":     KindOf,
+	"FormatDate": FormatDate,
+}
 
 func KindOf(in interface{}) string {
 	return reflect.TypeOf(in).Kind().String()
@@ -43,8 +54,8 @@ func FormatDate(in interface{}) (out string) {
 	return
 }
 
-func applyTemplate(in interface{}) (string, error) {
-	tmpl, err := template.New(path.Base(cfg.TemplatePath)).Funcs(tmplFuncMap).ParseFiles(cfg.TemplatePath)
+func applyTemplate(in interface{}, templatePath string) (string, error) {
+	tmpl, err := template.New(path.Base(templatePath)).Funcs(tmplFuncMap).ParseFiles(templatePath)
 	if err != nil {
 		log.Printf("error loading template file: %s", err)
 		return "", err
@@ -93,7 +104,16 @@ func newJobsKB(bot *TelegramBot) (kb tgbotapi.InlineKeyboardMarkup, e error) {
 			btnLabel = cfg.ButtonPrefixFail + string(l)
 		}
 
-		r = append(r, tgbotapi.NewInlineKeyboardButtonData(btnLabel, "J,"+string(l)))
+		// create new cache entry
+		cacheID := ksuid.New().String()
+		newCallback := Callback{
+			Type: "job",
+			Data: make(map[string]string),
+		}
+		newCallback.Data["job_name"] = string(l)
+		bot.Cache.Set(cacheID, newCallback)
+
+		r = append(r, tgbotapi.NewInlineKeyboardButtonData(btnLabel, cacheID))
 		if len(r) == cfg.KeyboardRows {
 			kb.InlineKeyboard = append(kb.InlineKeyboard, r)
 			r = tgbotapi.NewInlineKeyboardRow()
@@ -104,8 +124,15 @@ func newJobsKB(bot *TelegramBot) (kb tgbotapi.InlineKeyboardMarkup, e error) {
 		kb.InlineKeyboard = append(kb.InlineKeyboard, r)
 	}
 
-	// button with request to delete message
-	kb.InlineKeyboard = append(kb.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Close menu", "C,")))
+	// create new cache entry
+	cacheID := ksuid.New().String()
+	newCallback := Callback{
+		Type: "close",
+	}
+	bot.Cache.Set(cacheID, newCallback)
+
+	// button with request to delete message (close menu)
+	kb.InlineKeyboard = append(kb.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Close menu", cacheID)))
 
 	return
 }
@@ -162,7 +189,17 @@ func newTargetsKB(bot *TelegramBot, jobName string) (kb tgbotapi.InlineKeyboardM
 			btnLabel = cfg.ButtonPrefixFail + string(t.Labels["instance"])
 		}
 
-		r = append(r, tgbotapi.NewInlineKeyboardButtonData(btnLabel, "T,"+string(t.Labels["instance"])))
+		// create new cache entry
+		cacheID := ksuid.New().String()
+		newCallback := Callback{
+			Type: "target",
+			Data: make(map[string]string),
+		}
+		newCallback.Data["job_name"] = jobName
+		newCallback.Data["target_name"] = string(t.Labels["instance"])
+		bot.Cache.Set(cacheID, newCallback)
+
+		r = append(r, tgbotapi.NewInlineKeyboardButtonData(btnLabel, cacheID))
 		if len(r) == cfg.KeyboardRows {
 			kb.InlineKeyboard = append(kb.InlineKeyboard, r)
 			r = tgbotapi.NewInlineKeyboardRow()
@@ -176,20 +213,86 @@ func newTargetsKB(bot *TelegramBot, jobName string) (kb tgbotapi.InlineKeyboardM
 	return
 }
 
-func sendMessage(bot *TelegramBot, msg tgbotapi.Chattable) (err error) {
-	for i := 0; i < cfg.SendMessageRetryCount; i++ {
-		_, err = bot.BotAPI.Send(msg)
-		if err != nil {
-			e, ok := err.(telebot.FloodError)
-			if !ok {
-				break
-			}
+func splitStringIntoChunks(text string) (chunks []string) {
+	var chunk string
+	splitted := strings.Split(text, "\n")
 
-			log.Printf("got FloodError, retrying in %d", e.RetryAfter)
-			time.Sleep(time.Second * time.Duration(e.RetryAfter))
-			continue
+	for _, s := range splitted {
+		if len(chunk+"\n"+s) > maxMessageTextLength {
+			chunks = append(chunks, chunk)
+			chunk = ""
 		}
-		break
+		chunk = chunk + "\n" + s
+	}
+	chunks = append(chunks, chunk)
+	return
+}
+
+func sendMessage(bot *TelegramBot, c tgbotapi.Chattable) (err error) {
+	send := func(m tgbotapi.Chattable) (err error) {
+		for i := 0; i < cfg.SendMessageRetryCount; i++ {
+			_, err = bot.BotAPI.Send(m)
+			if err != nil {
+				e, ok := err.(telebot.FloodError)
+				if !ok {
+					break
+				}
+
+				log.Printf("got FloodError, retrying in %d", e.RetryAfter)
+				time.Sleep(time.Second * time.Duration(e.RetryAfter))
+				continue
+			}
+			break
+		}
+
+		return
+	}
+
+	switch m := c.(type) {
+	case tgbotapi.MessageConfig:
+		chunks := splitStringIntoChunks(m.Text)
+		for i, c := range chunks {
+			msg := tgbotapi.NewMessage(m.ChatID, c)
+			msg.ParseMode = m.ParseMode
+			if i == len(chunks)-1 {
+				msg.ReplyMarkup = m.ReplyMarkup
+			}
+			if err = send(msg); err != nil {
+				return
+			}
+		}
+	case tgbotapi.EditMessageTextConfig:
+		chunks := splitStringIntoChunks(m.Text)
+		if len(chunks) > 1 {
+			msg := tgbotapi.NewDeleteMessage(m.ChatID, m.MessageID)
+			if err = send(msg); err != nil {
+				return
+			}
+			for i, c := range chunks {
+				msg := tgbotapi.NewMessage(m.ChatID, c)
+				msg.ParseMode = m.ParseMode
+				if i == len(chunks)-1 {
+					msg.ReplyMarkup = m.ReplyMarkup
+				}
+				if err = send(msg); err != nil {
+					return
+				}
+			}
+		} else {
+			if err = send(m); err != nil {
+				return
+			}
+		}
+	case tgbotapi.DeleteMessageConfig:
+		if err = send(m); err != nil {
+			return
+		}
+	case tgbotapi.EditMessageReplyMarkupConfig:
+		if err = send(m); err != nil {
+			return
+		}
+	default:
+		return fmt.Errorf("unsupported tgbotapi.Chattable type %T", c)
 	}
 
 	return

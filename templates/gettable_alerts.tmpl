@@ -1,0 +1,19 @@
+{{- range . -}}
+---
+{{- $severity := index .Labels "severity" -}}
+{{ if eq $severity "info" }}
+ℹ <b>{{ index .Labels "job" | ToUpper }}</b> ℹ
+{{ else if eq $severity "warning" }}
+⚠️ <b>{{ index .Labels "job" | ToUpper }}</b> ⚠️
+{{ else if eq $severity "critical" }}
+🚨 <b>{{ index .Labels "job" | ToUpper }}</b> 🚨
+{{ else }}
+<b>{{ index .Labels "job" | ToUpper }}</b>
+{{ end -}}
+{{ index .Annotations "summary" }}
+{{ index .Annotations "description" }}
+Active from: <b>{{ .StartsAt | FormatDate }}</b>
+{{ if index .Annotations "value" -}}
+Current value: <b>{{ index .Annotations "value" }}</b>
+{{ end -}}
+{{ end -}}

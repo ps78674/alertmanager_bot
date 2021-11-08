@@ -8,16 +8,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-openapi/strfmt"
 	"github.com/prometheus/alertmanager/api/v2/client/alert"
 	"github.com/prometheus/alertmanager/api/v2/client/general"
+	"github.com/prometheus/alertmanager/api/v2/client/silence"
+	"github.com/prometheus/alertmanager/api/v2/models"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/segmentio/ksuid"
 	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
+
+const helpMsg = `
+Available commands:
+/status - show alertmanager & bot status
+/alerts - show active alerts
+/targets - show alerts per target
+/silences - show active silences
+`
 
 func handleUpdates(bot *TelegramBot) {
 	updates, err := bot.BotAPI.GetUpdatesChan(tgbotapi.NewUpdate(0))
 	if err != nil {
-		log.Fatalf("error getting updates channel: %s\n", err)
+		log.Printf("error getting updates channel: %s", err)
+		return
 	}
 
 	for update := range updates {
@@ -36,8 +49,24 @@ func handleUpdates(bot *TelegramBot) {
 			continue
 		}
 		if update.CallbackQuery != nil {
-			log.Printf("new callback query from %s: %s", update.CallbackQuery.From.String(), update.CallbackQuery.Data)
-			if err := processCallbackQuery(bot, update.CallbackQuery); err != nil {
+			// get callback data from cache
+			cacheData, err := bot.Cache.Get(update.CallbackQuery.Data)
+			if err != nil {
+				log.Printf("error getting callback data from cache: %s", err)
+				continue
+			}
+			bot.Cache.Remove(update.CallbackQuery.Data)
+
+			// marshall callback data for logging
+			b, err := json.Marshal(cacheData)
+			if err != nil {
+				log.Printf("error marshalling cache data: %s", err)
+				continue
+			}
+
+			// process callback query
+			log.Printf("new callback query from %s: %s", update.CallbackQuery.From.String(), string(b))
+			if err := processCallbackQuery(bot, update.CallbackQuery, cacheData.(Callback)); err != nil {
 				log.Printf("error processing callback query: %s", err)
 			}
 			continue
@@ -79,13 +108,14 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 	// process commands
 	switch m.Command() {
 	case "help", "start":
-		strMsg := fmt.Sprintf("Telegram Bot for Alertmanager\nVersion %s\n%s", versionString, helpMsg)
+		strMsg := fmt.Sprintf("Telegram Bot for Alertmanager\nVersion <b>%s</b>\n%s", versionString, helpMsg)
 		msg := tgbotapi.NewMessage(m.Chat.ID, strMsg)
+		msg.ParseMode = tgbotapi.ModeHTML
 		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
 	case "alerts":
-		// TODO: support multiple cmd arguments
+		// check command arguments
 		args := m.CommandArguments()
 		argsArr := strings.Split(args, " ")
 		if len(argsArr) > 1 {
@@ -104,9 +134,13 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 		}
 
 		// get active alerts
-		alerts, _ := bot.Alertmanager.Alert.GetAlerts(&alert.GetAlertsParams{
+		alerts, err := bot.Alertmanager.Alert.GetAlerts(&alert.GetAlertsParams{
 			Context: ctx,
 		})
+		if err != nil {
+			return fmt.Errorf("error getting alerts: %s", err)
+		}
+
 		if len(alerts.GetPayload()) == 0 {
 			msg := tgbotapi.NewMessage(m.Chat.ID, "No active alerts found.")
 			if err := sendMessage(bot, msg); err != nil {
@@ -115,8 +149,10 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 			return nil
 		}
 
-		// send message as json
-		if len(cfg.TemplatePath) == 0 || argsArr[0] == "json" {
+		// send plain json if no template defined in config
+		// or json send as first command argument
+		// e.g. '/alerts json'
+		if len(cfg.GettableAlertsTemplatePath) == 0 || argsArr[0] == "json" {
 			bytes, err := json.MarshalIndent(alerts.GetPayload(), "", "  ")
 			if err != nil {
 				return fmt.Errorf("error marshalling alerts: %s", err)
@@ -130,7 +166,7 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 		}
 
 		// send temlated message
-		s, err := applyTemplate(alerts.GetPayload())
+		s, err := applyTemplate(alerts.GetPayload(), cfg.GettableAlertsTemplatePath)
 		if err != nil {
 			return fmt.Errorf("error applying template: %s", err)
 		}
@@ -172,16 +208,16 @@ func processMessage(bot *TelegramBot, m *tgbotapi.Message) error {
 
 		status := fmt.Sprintf(`
 Alertmanager
-Version: %s
-Uptime: %s
+Version: <b>%s</b>
+Uptime: <b>%s</b>
 
 Prometheus
-Version: %s
-Uptime: %s
+Version: <b>%s</b>
+Uptime: <b>%s</b>
 
 Bot
-Version: %s
-Uptime: %s
+Version: <b>%s</b>
+Uptime: <b>%s</b>
 		`,
 			*aStatus.Payload.VersionInfo.Version,
 			time.Since(time.Time(*aStatus.Payload.Uptime)).String(),
@@ -190,6 +226,77 @@ Uptime: %s
 			versionString,
 			time.Since(bot.StartTime).String())
 		msg := tgbotapi.NewMessage(m.Chat.ID, status)
+		msg.ParseMode = tgbotapi.ModeHTML
+		if err := sendMessage(bot, msg); err != nil {
+			return fmt.Errorf("error sending message: %s", err)
+		}
+	case "silences":
+		// check command arguments
+		args := m.CommandArguments()
+		argsArr := strings.Split(args, " ")
+		if len(argsArr) > 1 {
+			msg := tgbotapi.NewMessage(m.Chat.ID, "Too many arguments.")
+			if err := sendMessage(bot, msg); err != nil {
+				return fmt.Errorf("error sending message: %s", err)
+			}
+			return nil
+		}
+		if len(argsArr[0]) != 0 && argsArr[0] != "json" {
+			msg := tgbotapi.NewMessage(m.Chat.ID, "Unknown argument.")
+			if err := sendMessage(bot, msg); err != nil {
+				return fmt.Errorf("error sending message: %s", err)
+			}
+			return nil
+		}
+
+		// get active silences
+		silences, err := bot.Alertmanager.Silence.GetSilences(&silence.GetSilencesParams{
+			Context: ctx,
+		})
+		if err != nil {
+			return fmt.Errorf("error gettnig silences: %s", err)
+		}
+
+		// TODO: better filter for active silences ??
+		var activeSilences models.GettableSilences
+		for _, s := range silences.GetPayload() {
+			if *s.Status.State == "active" {
+				activeSilences = append(activeSilences, s)
+			}
+		}
+
+		if len(activeSilences) == 0 {
+			msg := tgbotapi.NewMessage(m.Chat.ID, "No active silences found.")
+			if err := sendMessage(bot, msg); err != nil {
+				return fmt.Errorf("error sending message: %s", err)
+			}
+			return nil
+		}
+
+		// send plain json if no template defined in config
+		// or json send as first command argument
+		// e.g. '/silences json'
+		if len(cfg.GettableAlertsTemplatePath) == 0 || argsArr[0] == "json" {
+			bytes, err := json.MarshalIndent(activeSilences, "", "  ")
+			if err != nil {
+				return fmt.Errorf("error marshalling silences: %s", err)
+			}
+
+			msg := tgbotapi.NewMessage(m.Chat.ID, string(bytes))
+			if err := sendMessage(bot, msg); err != nil {
+				return fmt.Errorf("error sending message: %s", err)
+			}
+			return nil
+		}
+
+		// send temlated message
+		s, err := applyTemplate(activeSilences, cfg.SilencesTemplatePath)
+		if err != nil {
+			return fmt.Errorf("error applying template: %s", err)
+		}
+
+		msg := tgbotapi.NewMessage(m.Chat.ID, s)
+		msg.ParseMode = tgbotapi.ModeHTML
 		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
@@ -203,124 +310,193 @@ Uptime: %s
 	return nil
 }
 
-func processCallbackQuery(bot *TelegramBot, c *tgbotapi.CallbackQuery) error {
+func processCallbackQuery(bot *TelegramBot, cq *tgbotapi.CallbackQuery, cb Callback) error {
 	// api call timeout
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.APITimeout)
 	defer cancel()
 
-	// callback data limited to 64 bytes
-	// so we can't send large data like json etc
-	//
-	// callback data format: "<TYPE>,<NAME>", where
-	// <TYPE> - callback type
-	//          J - job
-	//          T - target
-	//          JJ - back menu for targets / print all jobs menu
-	//          TT - back menu for alerts / print all targets for job
-	//          C - close menu
-	// <NAME> - callback name (name for J, T or BT)
-	//
-	// Ex:
-	//     J,test_job
-	//     T,server1:9100
-	//     JJ,
-	//     TT,test_job
-	//     C,
-	//
-	// callbackData[0] - type
-	// callbackData[1] - name
-	callbackData := strings.SplitN(c.Data, ",", 2)
-	if len(callbackData) != 2 { // splitted data must be length of 2
-		return fmt.Errorf("got wrong data '%s'", c.Data)
-	}
-
-	switch callbackData[0] {
-	case "J":
-		kb, err := newTargetsKB(bot, callbackData[1])
+	switch cb.Type {
+	case "job":
+		// create inline keyboard with targets for requested job
+		kb, err := newTargetsKB(bot, cb.Data["job_name"])
 		if err != nil {
 			return fmt.Errorf("error creating targets menu: %s", err)
 		}
 
-		kb.InlineKeyboard = append(kb.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", "JJ,")))
+		// create new cache entry
+		cacheID := ksuid.New().String()
+		newCallback := Callback{
+			Type: "jobs",
+		}
+		bot.Cache.Set(cacheID, newCallback)
 
-		// msg := tgbotapi.NewMessage(c.Message.Chat.ID, "Select target:")
-		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, "Select target:")
-		msg.ReplyMarkup = &kb
+		kb.InlineKeyboard = append(kb.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", cacheID)))
+
+		var msg tgbotapi.Chattable
+		if cb.Data["leave_last_message"] == "yes" {
+			// remove 'Go back' button in previous message
+			newMarkup := tgbotapi.InlineKeyboardMarkup{
+				InlineKeyboard: make([][]tgbotapi.InlineKeyboardButton, 0),
+			}
+			if err := sendMessage(bot, tgbotapi.NewEditMessageReplyMarkup(cq.Message.Chat.ID, cq.Message.MessageID, newMarkup)); err != nil {
+				return fmt.Errorf("error sending message: %s", err)
+			}
+
+			m := tgbotapi.NewMessage(cq.Message.Chat.ID, "Select target:")
+			m.ReplyMarkup = &kb
+			msg = m
+		} else {
+			m := tgbotapi.NewEditMessageText(cq.Message.Chat.ID, cq.Message.MessageID, "Select target:")
+			m.ReplyMarkup = &kb
+			msg = m
+		}
 
 		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
-	case "T":
+	case "target":
 		al, err := bot.Alertmanager.Alert.GetAlerts(&alert.GetAlertsParams{
-			Filter:  []string{"instance=" + callbackData[1]},
+			Filter:  []string{"instance=" + cb.Data["target_name"]},
 			Context: ctx,
 		})
 		if err != nil {
-			return fmt.Errorf("error getting alerts for target '%s': %s", callbackData[1], err)
-			// log.Printf("error getting alerts for target '%s': %s", callbackData[1], err)
-			// continue
+			return fmt.Errorf("error getting alerts for target '%s': %s", cb.Data["target_name"], err)
 		}
 
 		var msgText string
 		if len(al.GetPayload()) > 0 {
-			s, err := applyTemplate(al.GetPayload())
+			s, err := applyTemplate(al.GetPayload(), cfg.GettableAlertsTemplatePath)
 			if err != nil {
 				return fmt.Errorf("error applying template: %s", err)
 			}
 			msgText = s
 		} else {
-			msgText = "No active alerts for " + callbackData[1]
+			msgText = "No active alerts for " + cb.Data["target_name"]
 		}
 
-		// get job name for target
-		v1api := v1.NewAPI(bot.Prometheus)
-		targets, err := v1api.Targets(ctx)
-		if err != nil {
-			return fmt.Errorf("error getting targets data: %s", err)
+		// create new cache entry
+		cacheID := ksuid.New().String()
+		newCallback := Callback{
+			Type: "job",
+			Data: make(map[string]string),
 		}
+		newCallback.Data["job_name"] = cb.Data["job_name"]
+		newCallback.Data["leave_last_message"] = "yes"
+		bot.Cache.Set(cacheID, newCallback)
 
-		for _, t := range targets.Active {
-			if string(t.Labels["instance"]) == callbackData[1] {
-				kb := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", "TT,"+string(t.Labels["job"]))))
-				msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, msgText)
-				msg.ParseMode = tgbotapi.ModeHTML
-				msg.ReplyMarkup = &kb
+		kb := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", cacheID)))
+		msg := tgbotapi.NewEditMessageText(cq.Message.Chat.ID, cq.Message.MessageID, msgText)
+		msg.ParseMode = tgbotapi.ModeHTML
+		msg.ReplyMarkup = &kb
 
-				if err := sendMessage(bot, msg); err != nil {
-					return fmt.Errorf("error sending message: %s", err)
-				}
-
-				break
-			}
+		if err := sendMessage(bot, msg); err != nil {
+			return fmt.Errorf("error sending message: %s", err)
 		}
-	case "JJ":
+	case "jobs":
+		// create inline keyboard for all prometheus jobs
 		kb, err := newJobsKB(bot)
 		if err != nil {
 			return fmt.Errorf("error creating jobs menu: %s", err)
 		}
 
-		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, "Select job:")
+		msg := tgbotapi.NewEditMessageText(cq.Message.Chat.ID, cq.Message.MessageID, "Select job:")
 		msg.ReplyMarkup = &kb
 
 		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
-	case "TT":
-		kb, err := newTargetsKB(bot, callbackData[1])
+	case "targets":
+		// create inline keyboard with targets for requested job
+		kb, err := newTargetsKB(bot, cb.Data["job_name"])
 		if err != nil {
 			return fmt.Errorf("error creating targets menu: %s", err)
 		}
 
-		kb.InlineKeyboard = append(kb.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", "JJ,")))
+		// create new cache entry
+		cacheID := ksuid.New().String()
+		newCallback := Callback{
+			Type: "jobs",
+		}
+		bot.Cache.Set(cacheID, newCallback)
 
-		msg := tgbotapi.NewEditMessageText(c.Message.Chat.ID, c.Message.MessageID, "Select target:")
+		kb.InlineKeyboard = append(kb.InlineKeyboard, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Go back", cacheID)))
+
+		msg := tgbotapi.NewEditMessageText(cq.Message.Chat.ID, cq.Message.MessageID, "Select target:")
 		msg.ReplyMarkup = &kb
 
 		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}
-	case "C":
-		msg := tgbotapi.NewDeleteMessage(c.Message.Chat.ID, c.Message.MessageID)
+	case "close":
+		msg := tgbotapi.NewDeleteMessage(cq.Message.Chat.ID, cq.Message.MessageID)
+		if err := sendMessage(bot, msg); err != nil {
+			return fmt.Errorf("error sending message: %s", err)
+		}
+	case "silence":
+		// HTTPClient := http.Client{}
+
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.APITimeout)
+		defer cancel()
+
+		instance_name := "instance"
+		instance_value := cb.Data["instance"]
+		alertname_name := "alertname"
+		alertname_value := cb.Data["alertname"]
+		isRegex := false
+
+		matchers := models.Matchers{
+			&models.Matcher{
+				IsRegex: &isRegex,
+				Name:    &instance_name,
+				Value:   &instance_value,
+			},
+			&models.Matcher{
+				IsRegex: &isRegex,
+				Name:    &alertname_name,
+				Value:   &alertname_value,
+			},
+		}
+
+		comment := ""
+		createdBy := programName + " version " + versionString
+		startsAt := strfmt.DateTime(time.Now())
+		endsAt := strfmt.DateTime(time.Now().Add(cfg.SilenceDuration))
+
+		params := silence.PostSilencesParams{
+			Silence: &models.PostableSilence{
+				Silence: models.Silence{
+					Comment:   &comment,
+					CreatedBy: &createdBy,
+					Matchers:  matchers,
+					StartsAt:  &startsAt,
+					EndsAt:    &endsAt,
+				},
+			},
+			Context: ctx,
+		}
+
+		// create new silence
+		ok, err := bot.Alertmanager.Silence.PostSilences(&params)
+		if err != nil {
+			return fmt.Errorf("error posting new silence: %s", err)
+		}
+
+		// remove 'Silence' button
+		newMarkup := tgbotapi.InlineKeyboardMarkup{
+			InlineKeyboard: make([][]tgbotapi.InlineKeyboardButton, 0),
+		}
+		if err := sendMessage(bot, tgbotapi.NewEditMessageReplyMarkup(cq.Message.Chat.ID, cq.Message.MessageID, newMarkup)); err != nil {
+			return fmt.Errorf("error sending message: %s", err)
+		}
+
+		m := fmt.Sprintf(`Created new silence:
+ID: <b>%s</b>
+StartsAt: <b>%s</b>
+EndsAt: <b>%s</b>
+Matchers: "[{instance="%s"},{alertname="%s"}]"`, ok.Payload.SilenceID, startsAt, endsAt, instance_value, alertname_value)
+
+		msg := tgbotapi.NewMessage(cq.Message.Chat.ID, m)
+		msg.ParseMode = tgbotapi.ModeHTML
 		if err := sendMessage(bot, msg); err != nil {
 			return fmt.Errorf("error sending message: %s", err)
 		}

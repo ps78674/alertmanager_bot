@@ -1,0 +1,39 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  group_by: ['instance','alertname']
+  group_wait: 30s
+  group_interval: 1m
+  repeat_interval: 1h
+  receiver: telegram
+  routes:
+  - matchers:
+      - job=test
+      - alertname=~"HostOutOfMemory|HostOutOfDiskSpace"
+    receiver: telegram_test
+    repeat_interval: 12h
+  - matchers:
+      - job=test
+      - alertname!~"HostOutOfMemory|HostOutOfDiskSpace"
+    receiver: devnull
+  - matchers:
+      - severity=critical
+    repeat_interval: 1h
+  - matchers:
+      - severity=warning
+    repeat_interval: 3h
+  - matchers:
+      - severity=info
+    repeat_interval: 10h
+
+receivers:
+- name: telegram
+  webhook_configs:
+  - send_resolved: True
+    url: http://127.0.0.1:9099/alerts?chatid=-123456789
+- name: telegram_test
+  webhook_configs:
+  - send_resolved: True
+    url: http://127.0.0.1:9099/alerts?chatid=-987654321
+- name: devnull

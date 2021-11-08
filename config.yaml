@@ -3,7 +3,9 @@
 # prometheus_url: http://localhost:9090
 # api_timeout: 10s
 # keyboard_rows: 2
-template_path: default.tmpl
+webhook_alerts_template_path: templates/webhook_alerts.tmpl
+gettable_alerts_template_path: templates/gettable_alerts.tmpl
+silences_template_path: templates/silences.tmpl
 # bind_address: 0.0.0.0
 # bind_port: 9000
 # disable_http: yes
@@ -15,3 +17,5 @@ users:
 # time_zone: Europe/Moscow
 button_prefix_ok: "✅ "
 button_prefix_fail: "🔥 "
+# send_message_retry_count: 3
+# silence_duration: 1h

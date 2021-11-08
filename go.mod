@@ -3,11 +3,13 @@ module alertmanager_bot
 go 1.17
 
 require (
+	github.com/ReneKroon/ttlcache/v2 v2.9.0
 	github.com/go-openapi/strfmt v0.20.2
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/prometheus/alertmanager v0.23.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/ps78674/docopt.go v0.0.0-20210902115100-9f20d33e8d65
+	github.com/segmentio/ksuid v1.0.4
 	github.com/valyala/fasthttp v1.30.0
 	gopkg.in/telegram-bot-api.v4 v4.6.4
 	gopkg.in/tucnak/telebot.v2 v2.4.0
@@ -53,6 +55,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.mongodb.org/mongo-driver v1.5.1 // indirect
 	golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985 // indirect
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
 	golang.org/x/text v0.3.6 // indirect
 	google.golang.org/protobuf v1.26.0-rc.1 // indirect

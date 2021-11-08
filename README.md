@@ -16,14 +16,5 @@ ChatID is id for chat, where bot will send messages via webhook.
 Telegram bot token must be set either via config.yaml or env var TELEGRAM_TOKEN
 Parameter `alertmanager_url` is used for getting alerts from alertmanager, `prometheus_url` - for getting jobs / targets per job rom prometheus (for forming inline menu).
 
-### Template
-Default template consists from two sections.
-```
-{{ $kind := KindOf . }}
-{{ if eq $kind "slice" }}
-    ...
-{{ else if eq $kind "struct" }}
-    ...
-{{ end -}}
-```
-Slice - GettableAlerts (from menu), struct - alerts from webhook.
+### Templates
+There are different templates for gettable alerts (from menu), webhook alerts and silences.

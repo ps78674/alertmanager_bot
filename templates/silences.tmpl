@@ -1,0 +1,12 @@
+{{- range . -}}
+---
+ID: <b>{{ .ID }}</b>
+StartsAt: <b>{{ .StartsAt | FormatDate }}</b>
+EndsAt: <b>{{ .EndsAt | FormatDate }}</b>
+Matchers: [
+{{- range .Matchers -}}
+{{- .Name -}}="{{- .Value -}}",
+{{- end -}}
+]
+{{ end }}
+

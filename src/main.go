@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"html/template"
 	"log"
 	"net/url"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ReneKroon/ttlcache/v2"
 	"github.com/go-openapi/strfmt"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/alertmanager/api/v2/client"
@@ -25,23 +25,26 @@ import (
 )
 
 var cfg struct {
-	ConfigFile            string        `envconfig:"CONFIG_PATH" docopt:"--config"`
-	TelegramToken         string        `envconfig:"TELEGRAM_TOKEN" yaml:"telegram_token"`
-	AlermanagerURL        string        `envconfig:"ALERTMANAGER_URL" yaml:"alertmanager_url" default:"http://localhost:9093"`
-	PrometheusURL         string        `envconfig:"PROMETHEUS_URL" yaml:"prometheus_url" default:"http://localhost:9090"`
-	APITimeout            time.Duration `envconfig:"API_TIMEOUT" yaml:"api_timeout" default:"10s"`
-	KeyboardRows          int           `envconfig:"KEYBOARD_ROWS" yaml:"keyboard_rows" default:"2"`
-	TemplatePath          string        `envconfig:"TEMPLATE_PATH" yaml:"template_path"`
-	BindAddress           string        `envconfig:"BIND_ADDRESS" yaml:"bind_address" default:"0.0.0.0"`
-	BindPort              int           `envconfig:"BIND_PORT" yaml:"bind_port" default:"8088"`
-	DisableHTTP           bool          `envconfig:"DISABLE_HTTP" yaml:"disable_http" default:"false"`
-	LogFile               string        `envconfig:"LOGFILE_PATH" yaml:"logfile_path"`
-	Users                 []string      `envconfig:"USERS" yaml:"users"`
-	TimeFormat            string        `envconfig:"TIMEFORMAT" yaml:"time_format" default:"02/01/2006 15:04:05"`
-	TimeZone              string        `envconfig:"TIMEZONE" yaml:"time_zone" default:"Europe/Moscow"`
-	ButtonPrefixOK        string        `envconfig:"BUTTON_PREFIX_OK" yaml:"button_prefix_ok"`
-	ButtonPrefixFail      string        `envconfig:"BUTTON_PREFIX_FAIL" yaml:"button_prefix_fail"`
-	SendMessageRetryCount int           `envconfig:"SEND_MESSAGE_RETRY_COUNT" yaml:"send_message_retry_count" default:"3"`
+	ConfigFile                 string        `envconfig:"CONFIG_PATH" docopt:"--config"`
+	TelegramToken              string        `envconfig:"TELEGRAM_TOKEN" yaml:"telegram_token"`
+	AlermanagerURL             string        `envconfig:"ALERTMANAGER_URL" yaml:"alertmanager_url" default:"http://localhost:9093"`
+	PrometheusURL              string        `envconfig:"PROMETHEUS_URL" yaml:"prometheus_url" default:"http://localhost:9090"`
+	APITimeout                 time.Duration `envconfig:"API_TIMEOUT" yaml:"api_timeout" default:"10s"`
+	KeyboardRows               int           `envconfig:"KEYBOARD_ROWS" yaml:"keyboard_rows" default:"2"`
+	WebhookAlertsTemplatePath  string        `envconfig:"WEBHOOK_ALERTS_TEMPLATE_PATH" yaml:"webhook_alerts_template_path"`
+	GettableAlertsTemplatePath string        `envconfig:"GETTABLE_ALERTS_TEMPLATE_PATH" yaml:"gettable_alerts_template_path"`
+	SilencesTemplatePath       string        `envconfig:"SILENCES_TEMPLATE_PATH" yaml:"silences_template_path"`
+	BindAddress                string        `envconfig:"BIND_ADDRESS" yaml:"bind_address" default:"0.0.0.0"`
+	BindPort                   int           `envconfig:"BIND_PORT" yaml:"bind_port" default:"8088"`
+	DisableHTTP                bool          `envconfig:"DISABLE_HTTP" yaml:"disable_http" default:"false"`
+	LogFile                    string        `envconfig:"LOGFILE_PATH" yaml:"logfile_path"`
+	Users                      []string      `envconfig:"USERS" yaml:"users"`
+	TimeFormat                 string        `envconfig:"TIMEFORMAT" yaml:"time_format" default:"02/01/2006 15:04:05"`
+	TimeZone                   string        `envconfig:"TIMEZONE" yaml:"time_zone" default:"Europe/Moscow"`
+	ButtonPrefixOK             string        `envconfig:"BUTTON_PREFIX_OK" yaml:"button_prefix_ok"`
+	ButtonPrefixFail           string        `envconfig:"BUTTON_PREFIX_FAIL" yaml:"button_prefix_fail"`
+	SendMessageRetryCount      int           `envconfig:"SEND_MESSAGE_RETRY_COUNT" yaml:"send_message_retry_count" default:"3"`
+	SilenceDuration            time.Duration `envconfig:"SILENCE_DURATION" yaml:"silence_duration" default:"1h"`
 }
 
 var (
@@ -55,32 +58,11 @@ Usage:
   %[1]s [ -c <CONFIGPATH> ]
 
 Options:
-  -c, --config <STRING>    config file path [env: CONFIG_PATH]
+  -c, --config <STRING>  config file path [env: CONFIG_PATH]
 
-  -h, --help               show this screen
-  -v, --version            show version
+  -h, --help             show this screen
+  --version              show version
 `, programName)
-
-var tmplFuncMap = template.FuncMap{
-	"ToUpper":    strings.ToUpper,
-	"ToLower":    strings.ToLower,
-	"KindOf":     KindOf,
-	"FormatDate": FormatDate,
-}
-
-const helpMsg = `
-Available commands:
-/status - show alertmanager & bot status
-/alerts - show active alerts
-/targets - show alerts per target
-`
-
-type TelegramBot struct {
-	BotAPI       *tgbotapi.BotAPI
-	Alertmanager *client.Alertmanager
-	Prometheus   api.Client
-	StartTime    time.Time
-}
 
 func init() {
 	// populate config from ENV first
@@ -181,10 +163,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	cache := ttlcache.NewCache()
+	defer cache.Close()
+
 	tgBot := TelegramBot{
 		BotAPI:       bot,
 		Alertmanager: alertCli,
 		Prometheus:   promCli,
+		Cache:        cache,
 		StartTime:    time.Now(),
 	}
 	go handleUpdates(&tgBot)
